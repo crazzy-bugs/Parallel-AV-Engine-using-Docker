@@ -1,0 +1,10 @@
+{
+    "id": "9ccea7d5-1b60-4092-8df2-cca4c98c29d1",
+    "timestamp": "2024-12-03T17:42:37.798880",
+    "type": ".txt",
+    "host_path": "/mnt/target-folder/SAKET.txt",
+    "status": "scan_failed",
+    "clamav_result": {
+        "error": "('Connection aborted.', BadStatusLine('UNKNOWN COMMAND\\n'))"
+    }
+}

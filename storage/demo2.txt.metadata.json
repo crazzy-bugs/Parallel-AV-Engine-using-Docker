@@ -1,0 +1,10 @@
+{
+    "id": "2ff63130-dadc-45e1-8d8e-3beccee59e6b",
+    "timestamp": "2024-12-03T17:41:52.593886",
+    "type": ".txt",
+    "host_path": "/mnt/target-folder/demo2.txt",
+    "status": "scan_failed",
+    "clamav_result": {
+        "error": "('Connection aborted.', BadStatusLine('UNKNOWN COMMAND\\n'))"
+    }
+}

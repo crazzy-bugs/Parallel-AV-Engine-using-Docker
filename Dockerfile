@@ -21,5 +21,11 @@ WORKDIR /app
 # Copy the Python script into the container
 COPY monitor.py /app/monitor.py
 
+# Ensure the target folder exists in the container
+RUN mkdir -p /mnt/target-folder /storage
+
+# Expose storage and monitoring folders
+VOLUME ["/mnt/target-folder", "/storage"]
+
 # Entry point to run the monitoring script
 ENTRYPOINT ["python3", "/app/monitor.py"]
