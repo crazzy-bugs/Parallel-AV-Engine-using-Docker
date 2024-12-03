@@ -1,18 +1,25 @@
-# Use an official Python image
-FROM python:3.9-slim
+# Use an official Ubuntu base image
+FROM ubuntu:20.04
 
-# Set working directory
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install required packages (inotify-tools, python, etc.)
+RUN apt-get update && \
+    apt-get install -y \
+    inotify-tools \
+    python3 \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+RUN pip3 install requests
+
+# Create a working directory
 WORKDIR /app
 
-# Copy requirements and install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy the Python script into the container
+COPY monitor.py /app/monitor.py
 
-# Copy application code
-COPY . .
-
-# Expose the port (optional, for debugging if needed)
-EXPOSE 8000
-
-# Run the server
-CMD ["python", "main.py"]
+# Entry point to run the monitoring script
+ENTRYPOINT ["python3", "/app/monitor.py"]
