@@ -1,10 +1,17 @@
 {
-    "id": "9ccea7d5-1b60-4092-8df2-cca4c98c29d1",
-    "timestamp": "2024-12-03T17:42:37.798880",
+    "id": "0f08974d-705a-4190-a50f-ce2719cea668",
+    "timestamp": "2024-12-03T19:36:57.686477",
     "type": ".txt",
-    "host_path": "/mnt/target-folder/SAKET.txt",
-    "status": "scan_failed",
-    "clamav_result": {
-        "error": "('Connection aborted.', BadStatusLine('UNKNOWN COMMAND\\n'))"
+    "host_path": "/storage/saket.txt",
+    "status": "scanned",
+    "av_results": {
+        "clamav": {
+            "status": "error",
+            "details": "('Connection aborted.', BadStatusLine('UNKNOWN COMMAND\\n'))"
+        },
+        "escan": {
+            "status": "error",
+            "details": "[Errno 2] No such file or directory: '/opt/MicroWorld/bin/escangui'"
+        }
     }
 }

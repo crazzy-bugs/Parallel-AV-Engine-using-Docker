@@ -1,18 +1,32 @@
-version: '3.8'
-
 services:
-  watcher:
-    build:
-      context: .
+  python-server:
+    build: .
     volumes:
       - ./target-folder:/mnt/target-folder
       - ./storage:/storage
     depends_on:
       - clamav
+      - escan
+    networks:
+      - scan_network
 
   clamav:
     image: clamav/clamav
     volumes:
       - ./storage:/shared
     ports:
-      - "3310:3310"  # ClamAV daemon port
+      - "3310:3310"
+    networks:
+      - scan_network
+
+  escan:
+    image: malice/escan
+    command: web
+    ports:
+      - "3993:3993"
+    networks:
+      - scan_network
+
+networks:
+  scan_network:
+    driver: bridge

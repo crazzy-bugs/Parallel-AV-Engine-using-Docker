@@ -1,0 +1,17 @@
+{
+    "id": "91d9e80d-73a0-437e-ab42-33971605133b",
+    "timestamp": "2024-12-03T19:42:12.590305",
+    "type": ".txt",
+    "host_path": "/storage/deep.txt",
+    "status": "scanned",
+    "av_results": {
+        "clamav": {
+            "status": "error",
+            "details": "HTTPConnectionPool(host='clamav', port=3310): Max retries exceeded with url: /scan (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7fb54bf9ee50>: Failed to establish a new connection: [Errno 111] Connection refused'))"
+        },
+        "escan": {
+            "status": "error",
+            "details": "[Errno 2] No such file or directory: 'malice/escan'"
+        }
+    }
+}
