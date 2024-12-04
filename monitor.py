@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import json
 import shutil
@@ -6,20 +7,25 @@ import uuid
 from datetime import datetime
 import requests
 import subprocess
-import pyclamd
+# import pyclamd
 
 # Path configurations
 WATCH_FOLDER = '/mnt/target-folder'  # This is where files will be watched
 STORAGE_FOLDER = '/storage'  # This is where files will be moved and scanned
-RESULTS_FILE = '/storage/result.json'
 
 # Antivirus configuration
 ANTIVIRUS_CONFIGS = [
+    # {
+    #     "name": "clamav",
+    #     "type": "network",
+    #     "url": "http://clamav:3310/scan",
+    #     "method": "network_scan"
+    # },
     {
-        "name": "clamav",
-        "type": "network",
-        "url": "http://clamav:3310/scan",
-        "method": "network_scan"
+        "name":"clamav",
+        "type":"local",
+        "url":"http://clamav:3310/scan",
+        "method":"local_scan"
     },
     {
         "name": "escan",
@@ -56,7 +62,7 @@ def create_metadata(file_path):
 
 def scan_with_clamdscan(folder_path):
     """
-    Scan the entire storage folder using clamdscan and return results
+    Scan the entire storage folder using clamdscan and return structured results.
     """
     try:
         # Run clamdscan on the storage folder
@@ -66,47 +72,47 @@ def scan_with_clamdscan(folder_path):
             text=True
         )
 
-        # log the result
-        print(f"clamdscan result: {result.stdout}")
-        
-        # Parse the JSON output
-        if result.returncode == 0:
-            # No infections found
-            return {
-                "status": "clean",
-                "details": "No threats found in the storage folder",
-                "raw_output": result.stdout
+        # Initialize structured output
+        structured_result = {
+            "status": "clean",  # Default assumption
+            "details": {
+                "engine": "ClamAV",
+                "result": "No threats found",
+                "updated": datetime.now().strftime("%Y%m%d")  # Simulated last update date
             }
-        elif result.returncode == 1:
-            # Infections found
-            try:
-                # Try to parse the JSON output
-                scan_results = json.loads(result.stdout)
-                return {
-                    "status": "infected",
-                    "details": scan_results,
-                    "raw_output": result.stdout
-                }
-            except json.JSONDecodeError:
-                # Fallback if JSON parsing fails
-                return {
-                    "status": "infected",
-                    "details": "Infected files detected, but unable to parse detailed results",
-                    "raw_output": result.stdout
-                }
-        else:
-            # Error in scanning
-            return {
-                "status": "error",
-                "details": result.stderr,
-                "raw_output": result.stdout
-            }
-    except Exception as e:
-        return {
-            "status": "error",
-            "details": str(e)
         }
 
+        # Parse the raw output
+        if result.returncode == 0:
+            # No infections found
+            structured_result["status"] = "clean"
+        elif result.returncode == 1:
+            # Infections found, parse the output
+            infected_match = re.search(r":\s(.*)\sFOUND", result.stdout)
+            if infected_match:
+                structured_result["status"] = "infected"
+                structured_result["details"]["result"] = infected_match.group(1)  # Extract malware name
+            else:
+                structured_result["status"] = "infected"
+                structured_result["details"]["result"] = "Unknown threat detected"  # Fallback for unmatched output
+        else:
+            # Scanning error
+            structured_result["status"] = "error"
+            structured_result["details"]["result"] = "Error in scanning"
+            structured_result["details"]["extra"] = result.stderr  # Include error details
+
+        return structured_result
+
+    except Exception as e:
+        # Return error details in case of exceptions
+        return {
+            "status": "error",
+            "details": {
+                "engine": "ClamAV",
+                "result": "Exception occurred during scanning",
+                "extra": str(e)
+            }
+        }
 def network_scan_comodo(file_path):
     try:
         url = "http://comodo:3993/scan"
@@ -121,37 +127,37 @@ def network_scan_comodo(file_path):
     except Exception as e:
         return {"status": "error", "details": str(e)}
 
-def scan_with_clamav(file_path):
-    try:
-        # Retry connection to ClamAV until it's ready
-        cd = None
-        retries = 0
-        while retries < 5:
-            try:
-                cd = pyclamd.ClamdNetworkSocket(host='clamav', port=3310)
-                if cd.ping():
-                    break  # If ClamAV is responsive, break the retry loop
-            except Exception as e:
-                retries += 1
-                print(f"Retrying ClamAV connection ({retries}/5)...")
-                time.sleep(2)  # Wait before retrying
+# def scan_with_clamav(file_path):
+#     try:
+#         # Retry connection to ClamAV until it's ready
+#         cd = None
+#         retries = 0
+#         while retries < 5:
+#             try:
+#                 cd = pyclamd.ClamdNetworkSocket(host='clamav', port=3310)
+#                 if cd.ping():
+#                     break  # If ClamAV is responsive, break the retry loop
+#             except Exception as e:
+#                 retries += 1
+#                 print(f"Retrying ClamAV connection ({retries}/5)...")
+#                 time.sleep(2)  # Wait before retrying
 
-        if cd is None or not cd.ping():
-            return {"status": "error", "details": "ClamAV daemon not responding after retries"}
+#         if cd is None or not cd.ping():
+#             return {"status": "error", "details": "ClamAV daemon not responding after retries"}
 
-        # Proceed with scanning once ClamAV is ready
-        scan_result = cd.scan_file(file_path)
-        while scan_result is None:  # If scan is still running, wait and retry
-            print(f"Waiting for ClamAV to finish scanning {file_path}...")
-            time.sleep(1)  # Wait a moment before checking again
-            scan_result = cd.scan_file(file_path)
+#         # Proceed with scanning once ClamAV is ready
+#         scan_result = cd.scan_file(file_path)
+#         while scan_result is None:  # If scan is still running, wait and retry
+#             print(f"Waiting for ClamAV to finish scanning {file_path}...")
+#             time.sleep(1)  # Wait a moment before checking again
+#             scan_result = cd.scan_file(file_path)
 
-        if scan_result:
-            return {"status": "infected", "details": scan_result}
-        else:
-            return {"status": "clean", "details": "No threats found"}
-    except Exception as e:
-        return {"status": "error", "details": str(e)}
+#         if scan_result:
+#             return {"status": "infected", "details": scan_result}
+#         else:
+#             return {"status": "clean", "details": "No threats found"}
+#     except Exception as e:
+#         return {"status": "error", "details": str(e)}
 
 def local_scan_escan(file_path):
     try:
@@ -195,8 +201,8 @@ def process_file(file_path):
             if av_config["method"] == "network_scan":
                 if av_config["name"] == "comodo":
                     scan_result = network_scan_comodo(destination)
-                elif av_config["name"] == "clamav":
-                    scan_result = scan_with_clamav(destination)
+                # elif av_config["name"] == "clamav":
+                #     scan_result = scan_with_clamav(destination)
                 elif av_config["name"] == "escan":
                     scan_result = local_scan_escan(destination)
                 elif av_config["name"] == "mcafee":
@@ -222,13 +228,15 @@ def process_file(file_path):
         json.dump(metadata, f, indent=4)
     print(f"Metadata created: {metadata_file}")
 
-    # Periodically run clamdscan on entire storage folder
-    clamdscan_results = scan_with_clamdscan(STORAGE_FOLDER)
-    
-    # Write clamdscan results to result.json
-    with open(RESULTS_FILE, 'w') as f:
-        json.dump(clamdscan_results, f, indent=4)
-    print(f"Clamdscan results written to {RESULTS_FILE}")
+    # Run clamdscan on the file and append results to its metadata file
+    clamdscan_results = scan_with_clamdscan(destination)
+    with open(metadata_file, 'r+') as f:
+        metadata = json.load(f)
+        metadata["av_results"]["clamdscan"] = clamdscan_results
+        f.seek(0)
+        json.dump(metadata, f, indent=4)
+        f.truncate()
+    print(f"Clamdscan results appended to metadata: {metadata_file}")
 
 def watch_directory():
     print(f"Watching directory: {WATCH_FOLDER}")
