@@ -11,6 +11,7 @@ import pyclamd
 # Path configurations
 WATCH_FOLDER = '/mnt/target-folder'  # This is where files will be watched
 STORAGE_FOLDER = '/storage'  # This is where files will be moved and scanned
+RESULTS_FILE = '/storage/result.json'
 
 # Antivirus configuration
 ANTIVIRUS_CONFIGS = [
@@ -52,6 +53,59 @@ def create_metadata(file_path):
         "host_path": absolute_path,  # Store absolute path
         "status": "moved"
     }
+
+def scan_with_clamdscan(folder_path):
+    """
+    Scan the entire storage folder using clamdscan and return results
+    """
+    try:
+        # Run clamdscan on the storage folder
+        result = subprocess.run(
+            ['clamdscan', '-r', '--fdpass', folder_path], 
+            capture_output=True, 
+            text=True
+        )
+
+        # log the result
+        print(f"clamdscan result: {result.stdout}")
+        
+        # Parse the JSON output
+        if result.returncode == 0:
+            # No infections found
+            return {
+                "status": "clean",
+                "details": "No threats found in the storage folder",
+                "raw_output": result.stdout
+            }
+        elif result.returncode == 1:
+            # Infections found
+            try:
+                # Try to parse the JSON output
+                scan_results = json.loads(result.stdout)
+                return {
+                    "status": "infected",
+                    "details": scan_results,
+                    "raw_output": result.stdout
+                }
+            except json.JSONDecodeError:
+                # Fallback if JSON parsing fails
+                return {
+                    "status": "infected",
+                    "details": "Infected files detected, but unable to parse detailed results",
+                    "raw_output": result.stdout
+                }
+        else:
+            # Error in scanning
+            return {
+                "status": "error",
+                "details": result.stderr,
+                "raw_output": result.stdout
+            }
+    except Exception as e:
+        return {
+            "status": "error",
+            "details": str(e)
+        }
 
 def network_scan_comodo(file_path):
     try:
@@ -168,6 +222,13 @@ def process_file(file_path):
         json.dump(metadata, f, indent=4)
     print(f"Metadata created: {metadata_file}")
 
+    # Periodically run clamdscan on entire storage folder
+    clamdscan_results = scan_with_clamdscan(STORAGE_FOLDER)
+    
+    # Write clamdscan results to result.json
+    with open(RESULTS_FILE, 'w') as f:
+        json.dump(clamdscan_results, f, indent=4)
+    print(f"Clamdscan results written to {RESULTS_FILE}")
 
 def watch_directory():
     print(f"Watching directory: {WATCH_FOLDER}")
@@ -184,7 +245,7 @@ def watch_directory():
             process_file(file_path)
             processed_files.add(file_name)
 
-        time.sleep(5)
+        time.sleep(5)  # Added back the sleep to prevent high CPU usage
 
 if __name__ == '__main__':
     watch_directory()
