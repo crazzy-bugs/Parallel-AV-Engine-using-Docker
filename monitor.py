@@ -201,8 +201,6 @@ def process_file(file_path):
             if av_config["method"] == "network_scan":
                 if av_config["name"] == "comodo":
                     scan_result = network_scan_comodo(destination)
-                # elif av_config["name"] == "clamav":
-                #     scan_result = scan_with_clamav(destination)
                 elif av_config["name"] == "escan":
                     scan_result = local_scan_escan(destination)
                 elif av_config["name"] == "mcafee":
@@ -217,6 +215,9 @@ def process_file(file_path):
                 "details": str(e)
             }
 
+    # Remove "clamav" key from scan results if present
+    scan_results.pop("clamav", None)
+
     # Create metadata with the scan results
     metadata = create_metadata(destination)
     metadata["status"] = "scanned"
@@ -230,9 +231,20 @@ def process_file(file_path):
 
     # Run clamdscan on the file and append results to its metadata file
     clamdscan_results = scan_with_clamdscan(destination)
+    # Standardize the structure for clamdscan
+    clamdscan_structured = {
+        "status": clamdscan_results["status"],
+        "details": {
+            "engine": clamdscan_results["details"]["engine"],
+            "infected": clamdscan_results["status"] == "infected",
+            "result": clamdscan_results["details"]["result"],
+            "updated": clamdscan_results["details"]["updated"]
+        }
+    }
+
     with open(metadata_file, 'r+') as f:
         metadata = json.load(f)
-        metadata["av_results"]["clamdscan"] = clamdscan_results
+        metadata["av_results"]["clamdscan"] = clamdscan_structured
         f.seek(0)
         json.dump(metadata, f, indent=4)
         f.truncate()

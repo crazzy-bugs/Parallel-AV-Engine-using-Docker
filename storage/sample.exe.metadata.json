@@ -1,0 +1,52 @@
+{
+    "id": "22b9cba8-20b8-4987-806c-b9456f85bf38",
+    "timestamp": "2024-12-04T21:48:26.664202",
+    "type": ".exe",
+    "host_path": "/storage/1mb.exe",
+    "status": "scanned",
+    "av_results": {
+        "escan": {
+            "status": "clean",
+            "details": {
+                "escan": {
+                    "infected": false,
+                    "result": "",
+                    "engine": "7.0-20",
+                    "updated": "20241204"
+                }
+            }
+        },
+        "mcafee": {
+            "status": "clean",
+            "details": {
+                "mcafee": {
+                    "infected": false,
+                    "result": "",
+                    "engine": "5600.1067",
+                    "database": "9219",
+                    "updated": "20241204"
+                }
+            }
+        },
+        "comodo": {
+            "status": "clean",
+            "details": {
+                "comodo": {
+                    "infected": false,
+                    "result": "",
+                    "engine": "5.0.163652.1142",
+                    "updated": "20241204"
+                }
+            }
+        },
+        "clamdscan": {
+            "status": "clean",
+            "details": {
+                "engine": "ClamAV",
+                "infected": false,
+                "result": "No threats found",
+                "updated": "20241204"
+            }
+        }
+    }
+}
