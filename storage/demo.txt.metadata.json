@@ -1,0 +1,47 @@
+{
+    "id": "020c802a-7cfb-4e97-8d81-8ad73ec28e44",
+    "timestamp": "2024-12-04T12:23:33.608914",
+    "type": ".txt",
+    "host_path": "/storage/demo.txt",
+    "status": "scanned",
+    "av_results": {
+        "clamav": {
+            "status": "error",
+            "details": "('Connection aborted.', BadStatusLine('UNKNOWN COMMAND\\n'))"
+        },
+        "escan": {
+            "status": "clean",
+            "details": {
+                "escan": {
+                    "infected": false,
+                    "result": "",
+                    "engine": "7.0-20",
+                    "updated": "20241204"
+                }
+            }
+        },
+        "mcafee": {
+            "status": "clean",
+            "details": {
+                "mcafee": {
+                    "infected": false,
+                    "result": "",
+                    "engine": "5600.1067",
+                    "database": "9219",
+                    "updated": "20241204"
+                }
+            }
+        },
+        "comodo": {
+            "status": "clean",
+            "details": {
+                "comodo": {
+                    "infected": false,
+                    "result": "",
+                    "engine": "5.0.163652.1142",
+                    "updated": "20241204"
+                }
+            }
+        }
+    }
+}
