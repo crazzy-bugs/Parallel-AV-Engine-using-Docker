@@ -7,23 +7,39 @@ services:
     depends_on:
       - clamav
       - escan
+      - mcafee
+      - comodo
     networks:
       - scan_network
 
   clamav:
     image: clamav/clamav
-    volumes:
-      - ./storage:/shared
     ports:
       - "3310:3310"
     networks:
       - scan_network
 
   escan:
-    image: malice/escan
+    image: malice/escan:updated
     command: web
     ports:
-      - "3993:3993"
+      - "3994:3993"
+    networks:
+      - scan_network
+
+  mcafee:
+    image: malice/mcafee:updated
+    command: web
+    ports:
+      - "3993:3994"
+    networks:
+      - scan_network
+
+  comodo:
+    image: malice/comodo:updated
+    command: web
+    ports:
+      - "3995:3993"  # Host port 3995, container port 3993
     networks:
       - scan_network
 

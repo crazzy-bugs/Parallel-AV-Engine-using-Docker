@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime
 import requests
 import subprocess
+import pyclamd
 
 # Path configurations
 WATCH_FOLDER = '/mnt/target-folder'
@@ -21,8 +22,20 @@ ANTIVIRUS_CONFIGS = [
     },
     {
         "name": "escan",
-        "type": "network",  # Use network as eScan is running as a web service
-        "url": "http://escan:3993/scan",  # Adjusted URL to use exposed port
+        "type": "network",
+        "url": "http://escan:3993/scan",
+        "method": "network_scan"
+    },
+    {
+        "name": "mcafee",
+        "type": "network",
+        "url": "http://mcafee:3994/scan",
+        "method": "network_scan"
+    },
+    {
+        "name": "comodo",
+        "type": "network",
+        "url": "http://comodo:3993/scan",
         "method": "network_scan"
     }
 ]
@@ -39,6 +52,19 @@ def create_metadata(file_path):
         "host_path": absolute_path,  # Store absolute path
         "status": "moved"
     }
+def network_scan_comodo(file_path):
+    try:
+        url = "http://comodo:3993/scan"
+        with open(file_path, 'rb') as file:
+            files = {'malware': file}
+            response = requests.post(url, files=files, timeout=30)
+
+        if response.status_code == 200:
+            return {"status": "clean", "details": response.json()}
+        else:
+            return {"status": "error", "details": response.text}
+    except Exception as e:
+        return {"status": "error", "details": str(e)}
 
 def network_scan_clamav(file_path):
     try:
@@ -68,6 +94,20 @@ def local_scan_escan(file_path):
     except Exception as e:
         return {"status": "error", "details": str(e)}
 
+def network_scan_mcafee(file_path):
+    try:
+        url = "http://mcafee:3993/scan"
+        with open(file_path, 'rb') as file:
+            files = {'malware': file}
+            response = requests.post(url, files=files, timeout=30)
+
+        if response.status_code == 200:
+            return {"status": "clean", "details": response.json()}
+        else:
+            return {"status": "error", "details": response.text}
+    except Exception as e:
+        return {"status": "error", "details": str(e)}
+
 def process_file(file_path):
     # Move file to storage with absolute path
     destination = os.path.join(STORAGE_FOLDER, os.path.basename(file_path))
@@ -75,7 +115,7 @@ def process_file(file_path):
     print(f"File moved to storage: {destination}")
 
     # Create metadata with the absolute path
-    metadata = create_metadata(destination)  # Use the new location for metadata
+    metadata = create_metadata(destination)
     metadata_file = f"{destination}.metadata.json"
 
     # Scan with multiple AVs
@@ -83,10 +123,14 @@ def process_file(file_path):
     for av_config in ANTIVIRUS_CONFIGS:
         try:
             if av_config["method"] == "network_scan":
-                if av_config["name"] == "clamav":
+                if av_config["name"] == "comodo":
+                    scan_result = network_scan_comodo(destination)
+                elif av_config["name"] == "clamav":
                     scan_result = network_scan_clamav(destination)
                 elif av_config["name"] == "escan":
                     scan_result = local_scan_escan(destination)
+                elif av_config["name"] == "mcafee":
+                    scan_result = network_scan_mcafee(destination)
             else:
                 scan_result = {"status": "unsupported", "details": "Unknown scan method"}
 
@@ -106,6 +150,7 @@ def process_file(file_path):
         json.dump(metadata, f, indent=4)
     print(f"Metadata created: {metadata_file}")
 
+
 def watch_directory():
     print(f"Watching directory: {WATCH_FOLDER}")
     processed_files = set()
@@ -124,3 +169,4 @@ def watch_directory():
 
 if __name__ == '__main__':
     watch_directory()
+
