@@ -29,13 +29,19 @@ ANTIVIRUS_CONFIGS = [
     {
         "name": "mcafee",
         "type": "network",
-        "url": "http://mcafee:3994/scan",
+        "url": "http://mcafee:3993/scan",
         "method": "network_scan"
     },
     {
         "name": "comodo",
         "type": "network",
         "url": "http://comodo:3993/scan",
+        "method": "network_scan"
+    },
+    {
+        "name": "fsecure",  # Added F-Secure
+        "type": "network",
+        "url": "http://fsecure:3993/scan",  # Update the port if necessary
         "method": "network_scan"
     }
 ]
@@ -52,6 +58,7 @@ def create_metadata(file_path):
         "host_path": absolute_path,  # Store absolute path
         "status": "moved"
     }
+
 def network_scan_comodo(file_path):
     try:
         url = "http://comodo:3993/scan"
@@ -66,18 +73,41 @@ def network_scan_comodo(file_path):
     except Exception as e:
         return {"status": "error", "details": str(e)}
 
-def network_scan_clamav(file_path):
-    try:
-        with open(file_path, 'rb') as file:
-            files = {'file': (os.path.basename(file_path), file)}
-            response = requests.post("http://clamav:3310/scan", files=files, timeout=30)
+import time
+import pyclamd
 
-        if response.status_code == 200:
-            return {"status": "clean", "details": response.json()}
+def scan_with_clamav(file_path):
+    try:
+        # Retry connection to ClamAV until it's ready
+        cd = None
+        retries = 0
+        while retries < 5:
+            try:
+                cd = pyclamd.ClamdNetworkSocket(host='clamav', port=3310)
+                if cd.ping():
+                    break  # If ClamAV is responsive, break the retry loop
+            except Exception as e:
+                retries += 1
+                print(f"Retrying ClamAV connection ({retries}/5)...")
+                time.sleep(2)  # Wait before retrying
+
+        if cd is None or not cd.ping():
+            return {"status": "error", "details": "ClamAV daemon not responding after retries"}
+
+        # Proceed with scanning once ClamAV is ready
+        scan_result = cd.scan_file(file_path)
+        while scan_result is None:  # If scan is still running, wait and retry
+            print(f"Waiting for ClamAV to finish scanning {file_path}...")
+            time.sleep(1)  # Wait a moment before checking again
+            scan_result = cd.scan_file(file_path)
+
+        if scan_result:
+            return {"status": "infected", "details": scan_result}
         else:
-            return {"status": "error", "details": response.text}
+            return {"status": "clean", "details": "No threats found"}
     except Exception as e:
         return {"status": "error", "details": str(e)}
+
 
 def local_scan_escan(file_path):
     try:
@@ -109,28 +139,19 @@ def network_scan_mcafee(file_path):
         return {"status": "error", "details": str(e)}
 
 def process_file(file_path):
-    # Move file to storage with absolute path
-    destination = os.path.join(STORAGE_FOLDER, os.path.basename(file_path))
-    shutil.move(file_path, destination)
-    print(f"File moved to storage: {destination}")
-
-    # Create metadata with the absolute path
-    metadata = create_metadata(destination)
-    metadata_file = f"{destination}.metadata.json"
-
-    # Scan with multiple AVs
+    # Scan with multiple AVs before moving the file
     scan_results = {}
     for av_config in ANTIVIRUS_CONFIGS:
         try:
             if av_config["method"] == "network_scan":
                 if av_config["name"] == "comodo":
-                    scan_result = network_scan_comodo(destination)
+                    scan_result = network_scan_comodo(file_path)
                 elif av_config["name"] == "clamav":
-                    scan_result = network_scan_clamav(destination)
+                    scan_result = scan_with_clamav(file_path)
                 elif av_config["name"] == "escan":
-                    scan_result = local_scan_escan(destination)
+                    scan_result = local_scan_escan(file_path)
                 elif av_config["name"] == "mcafee":
-                    scan_result = network_scan_mcafee(destination)
+                    scan_result = network_scan_mcafee(file_path)
             else:
                 scan_result = {"status": "unsupported", "details": "Unknown scan method"}
 
@@ -141,11 +162,21 @@ def process_file(file_path):
                 "details": str(e)
             }
 
-    # Update metadata with scan results
+    # Create metadata with the scan results
+    metadata = create_metadata(file_path)
     metadata["status"] = "scanned"
     metadata["av_results"] = scan_results
 
+    # Move file to storage with absolute path
+    destination = os.path.join(STORAGE_FOLDER, os.path.basename(file_path))
+    shutil.move(file_path, destination)
+    print(f"File moved to storage: {destination}")
+
+    # Update metadata with the absolute path after moving the file
+    metadata["host_path"] = os.path.abspath(destination)
+
     # Write metadata
+    metadata_file = f"{destination}.metadata.json"
     with open(metadata_file, 'w') as f:
         json.dump(metadata, f, indent=4)
     print(f"Metadata created: {metadata_file}")

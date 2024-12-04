@@ -1,13 +1,18 @@
 {
-    "id": "020c802a-7cfb-4e97-8d81-8ad73ec28e44",
-    "timestamp": "2024-12-04T12:23:33.608914",
+    "id": "5cd7ba4f-c6fa-45e6-904f-4645c5f3469b",
+    "timestamp": "2024-12-04T15:04:47.989749",
     "type": ".txt",
-    "host_path": "/storage/demo.txt",
+    "host_path": "/storage/dip.txt",
     "status": "scanned",
     "av_results": {
         "clamav": {
-            "status": "error",
-            "details": "('Connection aborted.', BadStatusLine('UNKNOWN COMMAND\\n'))"
+            "status": "infected",
+            "details": {
+                "/mnt/target-folder/dip.txt": [
+                    "ERROR",
+                    "File path check failure: No such file or directory."
+                ]
+            }
         },
         "escan": {
             "status": "clean",
@@ -33,6 +38,17 @@
             }
         },
         "comodo": {
+            "status": "clean",
+            "details": {
+                "comodo": {
+                    "infected": false,
+                    "result": "",
+                    "engine": "5.0.163652.1142",
+                    "updated": "20241204"
+                }
+            }
+        },
+        "fsecure": {
             "status": "clean",
             "details": {
                 "comodo": {
