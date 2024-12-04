@@ -2,8 +2,8 @@ services:
   python-server:
     build: .
     volumes:
-      - ./target-folder:/mnt/target-folder
-      - ./storage:/storage
+      - ./target-folder:/mnt/target-folder  # Watching and processing files initially in target-folder
+      - ./storage:/storage  # Now, the processed files will be stored in the storage directory
     depends_on:
       - clamav
       - escan
@@ -42,8 +42,6 @@ services:
       - "3995:3993"  # Host port 3995, container port 3993
     networks:
       - scan_network
-
-
 
 networks:
   scan_network:

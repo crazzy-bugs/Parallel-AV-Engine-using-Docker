@@ -9,8 +9,8 @@ import subprocess
 import pyclamd
 
 # Path configurations
-WATCH_FOLDER = '/mnt/target-folder'
-STORAGE_FOLDER = '/storage'
+WATCH_FOLDER = '/mnt/target-folder'  # This is where files will be watched
+STORAGE_FOLDER = '/storage'  # This is where files will be moved and scanned
 
 # Antivirus configuration
 ANTIVIRUS_CONFIGS = [
@@ -38,12 +38,6 @@ ANTIVIRUS_CONFIGS = [
         "url": "http://comodo:3993/scan",
         "method": "network_scan"
     },
-    {
-        "name": "fsecure",  # Added F-Secure
-        "type": "network",
-        "url": "http://fsecure:3993/scan",  # Update the port if necessary
-        "method": "network_scan"
-    }
 ]
 
 # Ensure the storage folder exists
@@ -72,9 +66,6 @@ def network_scan_comodo(file_path):
             return {"status": "error", "details": response.text}
     except Exception as e:
         return {"status": "error", "details": str(e)}
-
-import time
-import pyclamd
 
 def scan_with_clamav(file_path):
     try:
@@ -108,7 +99,6 @@ def scan_with_clamav(file_path):
     except Exception as e:
         return {"status": "error", "details": str(e)}
 
-
 def local_scan_escan(file_path):
     try:
         # eScan expects a file POST to the /scan endpoint
@@ -139,19 +129,24 @@ def network_scan_mcafee(file_path):
         return {"status": "error", "details": str(e)}
 
 def process_file(file_path):
-    # Scan with multiple AVs before moving the file
+    # Move file to storage folder
+    destination = os.path.join(STORAGE_FOLDER, os.path.basename(file_path))
+    shutil.move(file_path, destination)
+    print(f"File moved to storage: {destination}")
+    
+    # Scan with multiple AVs after moving the file to storage
     scan_results = {}
     for av_config in ANTIVIRUS_CONFIGS:
         try:
             if av_config["method"] == "network_scan":
                 if av_config["name"] == "comodo":
-                    scan_result = network_scan_comodo(file_path)
+                    scan_result = network_scan_comodo(destination)
                 elif av_config["name"] == "clamav":
-                    scan_result = scan_with_clamav(file_path)
+                    scan_result = scan_with_clamav(destination)
                 elif av_config["name"] == "escan":
-                    scan_result = local_scan_escan(file_path)
+                    scan_result = local_scan_escan(destination)
                 elif av_config["name"] == "mcafee":
-                    scan_result = network_scan_mcafee(file_path)
+                    scan_result = network_scan_mcafee(destination)
             else:
                 scan_result = {"status": "unsupported", "details": "Unknown scan method"}
 
@@ -163,17 +158,9 @@ def process_file(file_path):
             }
 
     # Create metadata with the scan results
-    metadata = create_metadata(file_path)
+    metadata = create_metadata(destination)
     metadata["status"] = "scanned"
     metadata["av_results"] = scan_results
-
-    # Move file to storage with absolute path
-    destination = os.path.join(STORAGE_FOLDER, os.path.basename(file_path))
-    shutil.move(file_path, destination)
-    print(f"File moved to storage: {destination}")
-
-    # Update metadata with the absolute path after moving the file
-    metadata["host_path"] = os.path.abspath(destination)
 
     # Write metadata
     metadata_file = f"{destination}.metadata.json"
@@ -193,6 +180,7 @@ def watch_directory():
                 continue
 
             print(f"New file detected: {file_path}")
+            # Move the file to storage and start scanning
             process_file(file_path)
             processed_files.add(file_name)
 
@@ -200,4 +188,3 @@ def watch_directory():
 
 if __name__ == '__main__':
     watch_directory()
-
