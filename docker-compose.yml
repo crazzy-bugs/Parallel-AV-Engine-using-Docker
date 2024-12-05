@@ -10,6 +10,7 @@ services:
       - mcafee
       - comodo
       - windows-defender
+      - fprot
     networks:
       - scan_network
     environment:
