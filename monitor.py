@@ -181,7 +181,7 @@ def scan_with_clamdscan(path):
                 "extra": str(e)
             }
         }
-def network_scan_comodo(file_path):
+def comodo(file_path):
     try:
         url = "http://comodo:3993/scan"
         with open(file_path, 'rb') as file:
@@ -223,7 +223,7 @@ def windows_defender(file_path):
     except Exception as e:
         return {"status": "error", "details": str(e)}
 
-def local_scan_escan(file_path):
+def escan(file_path):
     try:
         # eScan expects a file POST to the /scan endpoint
         url = "http://escan:3993/scan"  # Adjusted URL
@@ -255,7 +255,7 @@ def process_item(item_path):
         # If it's a single file, process it
         process_file(item_path)
 
-def network_scan_mcafee(file_path):
+def mcafee(file_path):
     try:
         url = "http://mcafee:3993/scan"
         with open(file_path, 'rb') as file:
@@ -291,9 +291,9 @@ def process_file(file_path):
         
         # Perform scanning with all AV engines
         clamdscan_result = scan_with_clamdscan(destination)
-        escan_result = local_scan_escan(destination)
-        mcafee_result = network_scan_mcafee(destination)
-        comodo_result = network_scan_comodo(destination)
+        escan_result = escan(destination)
+        mcafee_result = mcafee(destination)
+        comodo_result = comodo(destination)
         windows_defender_result = windows_defender(destination)
         fprot_result = fprot(destination)
         
