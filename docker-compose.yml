@@ -9,6 +9,7 @@ services:
       - escan
       - mcafee
       - comodo
+      - windows-defender
     networks:
       - scan_network
     environment:
@@ -37,6 +38,22 @@ services:
     command: web
     ports:
       - '3995:3993'
+    networks:
+      - scan_network
+
+  windows-defender:
+    image: malice/windows-defender
+    command: web
+    ports:
+      - '3996:3993'
+    networks:
+      - scan_network
+
+  fprot:
+    image: malice/fprot:updated
+    command: web
+    ports:
+      - '3997:3993'
     networks:
       - scan_network
 

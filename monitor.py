@@ -46,6 +46,18 @@ ANTIVIRUS_CONFIGS = [
         "url": "http://comodo:3993/scan",
         "method": "network_scan"
     },
+    {
+        "name": "windows-defender",
+        "type": "network",
+        "url": "http://windows-defender:3993/scan",
+        "method": "network_scan"
+    },
+    {
+        "name": "fprot",
+        "type": "network",
+        "url": "http://fprot:3993/scan",
+        "method": "network_scan"
+    }
 ]
 
 # Ensure the storage folder exists
@@ -183,6 +195,34 @@ def network_scan_comodo(file_path):
     except Exception as e:
         return {"status": "error", "details": str(e)}
 
+def fprot(file_path):
+    try:
+        url = "http://fprot:3993/scan"
+        with open(file_path, 'rb') as file:
+            files = {'malware': file}
+            response = requests.post(url, files=files, timeout=30)
+
+        if response.status_code == 200:
+            return {"status": "clean", "details": response.json()}
+        else:
+            return {"status": "error", "details": response.text}
+    except Exception as e:
+        return {"status": "error", "details": str(e)}
+
+def windows_defender(file_path):
+    try:
+        url = "http://windows-defender:3993/scan"
+        with open(file_path, 'rb') as file:
+            files = {'malware': file}
+            response = requests.post(url, files=files, timeout=30)
+
+        if response.status_code == 200:
+            return {"status": "clean", "details": response.json()}
+        else:
+            return {"status": "error", "details": response.text}
+    except Exception as e:
+        return {"status": "error", "details": str(e)}
+
 def local_scan_escan(file_path):
     try:
         # eScan expects a file POST to the /scan endpoint
@@ -254,6 +294,8 @@ def process_file(file_path):
         escan_result = local_scan_escan(destination)
         mcafee_result = network_scan_mcafee(destination)
         comodo_result = network_scan_comodo(destination)
+        windows_defender_result = windows_defender(destination)
+        fprot_result = fprot(destination)
         
         # Create metadata
         metadata = {
@@ -268,7 +310,9 @@ def process_file(file_path):
                 "clamdscan": clamdscan_result,
                 "escan": escan_result,
                 "mcafee": mcafee_result,
-                "comodo": comodo_result
+                "comodo": comodo_result,
+                "windows-defender": windows_defender_result,
+                "fprot": fprot_result
             }
         }
         
