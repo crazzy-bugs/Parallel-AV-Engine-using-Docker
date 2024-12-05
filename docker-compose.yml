@@ -2,22 +2,19 @@ services:
   python-server:
     build: .
     volumes:
-      - ./target-folder:/mnt/target-folder # Watching and processing files initially in target-folder
-      - ./storage:/storage # Now, the processed files will be stored in the storage directory
+      - ./target-folder:/mnt/target-folder  # Watching and processing files initially in target-folder
+      - ./storage:/storage  # Processed files will be stored in the storage directory
+      - ./dummy-folder:/mnt/dummy-folder  # Added volume for dummy files during scanning
     depends_on:
-      # - clamav
       - escan
       - mcafee
       - comodo
     networks:
       - scan_network
-
-  # clamav:
-  #   image: clamav/clamav
-  #   ports:
-  #     - "3310:3310"
-  #   networks:
-  #     - scan_network
+    environment:
+      - WATCH_FOLDER=/mnt/target-folder
+      - STORAGE_FOLDER=/storage
+      - DUMMY_FOLDER=/mnt/dummy-folder
 
   escan:
     image: malice/escan:updated
@@ -39,7 +36,7 @@ services:
     image: malice/comodo:updated
     command: web
     ports:
-      - '3995:3993' # Host port 3995, container port 3993
+      - '3995:3993'
     networks:
       - scan_network
 

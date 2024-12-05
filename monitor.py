@@ -7,12 +7,13 @@ import uuid
 from datetime import datetime
 import requests
 import subprocess
-# import pyclamd
+import hashlib
 
 # Path configurations
 WATCH_FOLDER = '/mnt/target-folder'  # This is where files will be watched
 STORAGE_FOLDER = '/storage'  # This is where files will be moved and scanned
-
+DUMMY_FOLDER = '/mnt/dummy-folder'  # Dummy folder to show placeholder during scanning
+ORIGINAL_PATHS_FILE = '/tmp/original_paths.json'  # Tracks original file and folder paths
 # Antivirus configuration
 ANTIVIRUS_CONFIGS = [
     # {
@@ -49,67 +50,122 @@ ANTIVIRUS_CONFIGS = [
 
 # Ensure the storage folder exists
 os.makedirs(STORAGE_FOLDER, exist_ok=True)
+os.makedirs(DUMMY_FOLDER, exist_ok=True)
+os.makedirs(os.path.dirname(ORIGINAL_PATHS_FILE), exist_ok=True)
 
-def create_metadata(file_path):
-    absolute_path = os.path.abspath(file_path)  # Convert to absolute path
-    return {
-        "id": str(uuid.uuid4()),
-        "timestamp": datetime.now().isoformat(),
-        "type": os.path.splitext(file_path)[1],
-        "host_path": absolute_path,  # Store absolute path
-        "status": "moved"
-    }
+def load_original_paths():
+    """Load original file and folder paths from a JSON file."""
+    try:
+        with open(ORIGINAL_PATHS_FILE, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
 
-def scan_with_clamdscan(folder_path):
+def save_original_paths(paths_dict):
+    """Save original file and folder paths to a JSON file."""
+    with open(ORIGINAL_PATHS_FILE, 'w') as f:
+        json.dump(paths_dict, f, indent=4)
+
+def generate_file_hash(file_path, chunk_size=65536):
     """
-    Scan the entire storage folder using clamdscan and return structured results.
+    Generate a hash for a file with minimal memory usage.
+    Useful for large files.
+    """
+    if os.path.isdir(file_path):
+        # For directories, generate a hash of all file contents
+        hasher = hashlib.sha256()
+        for root, _, files in os.walk(file_path):
+            for filename in files:
+                filepath = os.path.join(root, filename)
+                try:
+                    with open(filepath, 'rb') as f:
+                        for chunk in iter(lambda: f.read(chunk_size), b''):
+                            hasher.update(chunk)
+                except Exception:
+                    pass  # Skip files that can't be read
+        return hasher.hexdigest()
+    
+    # For files, use existing hash method
+    hasher = hashlib.sha256()
+    with open(file_path, 'rb') as f:
+        for chunk in iter(lambda: f.read(chunk_size), b''):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+def create_dummy_placeholder(original_path):
+    """
+    Create a dummy file or folder to maintain visibility during scanning.
+    """
+    # Generate a unique dummy name
+    dummy_name = f"scanning_{uuid.uuid4()}_{os.path.basename(original_path)}"
+    dummy_path = os.path.join(DUMMY_FOLDER, dummy_name)
+    
+    if os.path.isdir(original_path):
+        # Create dummy folder
+        os.makedirs(dummy_path, exist_ok=True)
+    else:
+        # Create dummy file with size information
+        with open(dummy_path, 'w') as f:
+            f.write(f"Scanning in progress...\n")
+            f.write(f"Original file: {original_path}\n")
+            f.write(f"Size: {os.path.getsize(original_path)} bytes")
+    
+    return dummy_path
+
+def scan_with_clamdscan(path):
+    """
+    Scan file or directory using clamdscan with optimized error handling.
     """
     try:
-        # Run clamdscan on the storage folder
         result = subprocess.run(
-            ['clamdscan', '-r', '--fdpass', folder_path], 
+            ['clamdscan', '--fdpass', path], 
             capture_output=True, 
-            text=True
+            text=True,
+            timeout=600  # 10-minute timeout for large folders
         )
 
-        # Initialize structured output
         structured_result = {
-            "status": "clean",  # Default assumption
+            "status": "clean",
             "details": {
                 "engine": "ClamAV",
                 "result": "No threats found",
-                "updated": datetime.now().strftime("%Y%m%d")  # Simulated last update date
+                "updated": datetime.now().strftime("%Y%m%d")
             }
         }
 
-        # Parse the raw output
-        if result.returncode == 0:
-            # No infections found
-            structured_result["status"] = "clean"
-        elif result.returncode == 1:
-            # Infections found, parse the output
+        if result.returncode == 1:
+            structured_result["status"] = "infected"
             infected_match = re.search(r":\s(.*)\sFOUND", result.stdout)
-            if infected_match:
-                structured_result["status"] = "infected"
-                structured_result["details"]["result"] = infected_match.group(1)  # Extract malware name
-            else:
-                structured_result["status"] = "infected"
-                structured_result["details"]["result"] = "Unknown threat detected"  # Fallback for unmatched output
-        else:
-            # Scanning error
-            structured_result["status"] = "error"
-            structured_result["details"]["result"] = "Error in scanning"
-            structured_result["details"]["extra"] = result.stderr  # Include error details
+            structured_result["details"]["result"] = (
+                infected_match.group(1) if infected_match else "Unknown threat"
+            )
+        elif result.returncode > 1:
+            structured_result = {
+                "status": "error",
+                "details": {
+                    "engine": "ClamAV",
+                    "result": "Scanning error",
+                    "extra": result.stderr
+                }
+            }
 
         return structured_result
 
-    except Exception as e:
-        # Return error details in case of exceptions
+    except subprocess.TimeoutExpired:
         return {
             "status": "error",
             "details": {
                 "engine": "ClamAV",
-                "result": "Exception occurred during scanning",
+                "result": "Scanning timed out",
+                "extra": "File/Folder may be too large"
+            }
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "details": {
+                "engine": "ClamAV",
+                "result": "Exception during scanning",
                 "extra": str(e)
             }
         }
@@ -127,38 +183,6 @@ def network_scan_comodo(file_path):
     except Exception as e:
         return {"status": "error", "details": str(e)}
 
-# def scan_with_clamav(file_path):
-#     try:
-#         # Retry connection to ClamAV until it's ready
-#         cd = None
-#         retries = 0
-#         while retries < 5:
-#             try:
-#                 cd = pyclamd.ClamdNetworkSocket(host='clamav', port=3310)
-#                 if cd.ping():
-#                     break  # If ClamAV is responsive, break the retry loop
-#             except Exception as e:
-#                 retries += 1
-#                 print(f"Retrying ClamAV connection ({retries}/5)...")
-#                 time.sleep(2)  # Wait before retrying
-
-#         if cd is None or not cd.ping():
-#             return {"status": "error", "details": "ClamAV daemon not responding after retries"}
-
-#         # Proceed with scanning once ClamAV is ready
-#         scan_result = cd.scan_file(file_path)
-#         while scan_result is None:  # If scan is still running, wait and retry
-#             print(f"Waiting for ClamAV to finish scanning {file_path}...")
-#             time.sleep(1)  # Wait a moment before checking again
-#             scan_result = cd.scan_file(file_path)
-
-#         if scan_result:
-#             return {"status": "infected", "details": scan_result}
-#         else:
-#             return {"status": "clean", "details": "No threats found"}
-#     except Exception as e:
-#         return {"status": "error", "details": str(e)}
-
 def local_scan_escan(file_path):
     try:
         # eScan expects a file POST to the /scan endpoint
@@ -174,6 +198,23 @@ def local_scan_escan(file_path):
     except Exception as e:
         return {"status": "error", "details": str(e)}
 
+def process_item(item_path):
+    """
+    Process a file or folder for scanning.
+    """
+    # Track original paths
+    original_paths = load_original_paths()
+    
+    # If it's a directory, process each file in the directory
+    if os.path.isdir(item_path):
+        for root, _, files in os.walk(item_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                process_file(file_path)
+    else:
+        # If it's a single file, process it
+        process_file(item_path)
+
 def network_scan_mcafee(file_path):
     try:
         url = "http://mcafee:3993/scan"
@@ -188,84 +229,187 @@ def network_scan_mcafee(file_path):
     except Exception as e:
         return {"status": "error", "details": str(e)}
 
+
 def process_file(file_path):
-    # Move file to storage folder
-    destination = os.path.join(STORAGE_FOLDER, os.path.basename(file_path))
-    shutil.move(file_path, destination)
-    print(f"File moved to storage: {destination}")
+    """Process individual files (whether inside a directory or standalone)"""
+    original_paths = load_original_paths()
     
-    # Scan with multiple AVs after moving the file to storage
-    scan_results = {}
-    for av_config in ANTIVIRUS_CONFIGS:
-        try:
-            if av_config["method"] == "network_scan":
-                if av_config["name"] == "comodo":
-                    scan_result = network_scan_comodo(destination)
-                elif av_config["name"] == "escan":
-                    scan_result = local_scan_escan(destination)
-                elif av_config["name"] == "mcafee":
-                    scan_result = network_scan_mcafee(destination)
-            else:
-                scan_result = {"status": "unsupported", "details": "Unknown scan method"}
-
-            scan_results[av_config["name"]] = scan_result
-        except Exception as e:
-            scan_results[av_config["name"]] = {
-                "status": "error",
-                "details": str(e)
+    # Generate unique name to prevent conflicts
+    unique_name = f"{datetime.now().timestamp()}_{os.path.basename(file_path)}"
+    destination = os.path.join(STORAGE_FOLDER, unique_name)
+    
+    try:
+        # Create dummy placeholder
+        dummy_path = create_dummy_placeholder(file_path)
+        
+        # Move file to storage
+        shutil.move(file_path, destination)
+        
+        # Store original path
+        original_paths[unique_name] = os.path.abspath(file_path)
+        save_original_paths(original_paths)
+        
+        # Perform scanning with all AV engines
+        clamdscan_result = scan_with_clamdscan(destination)
+        escan_result = local_scan_escan(destination)
+        mcafee_result = network_scan_mcafee(destination)
+        comodo_result = network_scan_comodo(destination)
+        
+        # Create metadata
+        metadata = {
+            "id": str(uuid.uuid4()),
+            "timestamp": datetime.now().isoformat(),
+            "type": "file",
+            "host_path": os.path.abspath(destination),
+            "original_path": original_paths[unique_name],
+            "file_hash": generate_file_hash(destination),
+            "status": "scanned",
+            "av_results": {
+                "clamdscan": clamdscan_result,
+                "escan": escan_result,
+                "mcafee": mcafee_result,
+                "comodo": comodo_result
             }
-
-    # Remove "clamav" key from scan results if present
-    scan_results.pop("clamav", None)
-
-    # Create metadata with the scan results
-    metadata = create_metadata(destination)
-    metadata["status"] = "scanned"
-    metadata["av_results"] = scan_results
-
-    # Write metadata
-    metadata_file = f"{destination}.metadata.json"
-    with open(metadata_file, 'w') as f:
-        json.dump(metadata, f, indent=4)
-    print(f"Metadata created: {metadata_file}")
-
-    # Run clamdscan on the file and append results to its metadata file
-    clamdscan_results = scan_with_clamdscan(destination)
-    # Standardize the structure for clamdscan
-    clamdscan_structured = {
-        "status": clamdscan_results["status"],
-        "details": {
-            "engine": clamdscan_results["details"]["engine"],
-            "infected": clamdscan_results["status"] == "infected",
-            "result": clamdscan_results["details"]["result"],
-            "updated": clamdscan_results["details"]["updated"]
         }
-    }
-
-    with open(metadata_file, 'r+') as f:
-        metadata = json.load(f)
-        metadata["av_results"]["clamdscan"] = clamdscan_structured
-        f.seek(0)
-        json.dump(metadata, f, indent=4)
-        f.truncate()
-    print(f"Clamdscan results appended to metadata: {metadata_file}")
+        
+        # Write metadata
+        metadata_file = f"{destination}.metadata.json"
+        with open(metadata_file, 'w') as f:
+            json.dump(metadata, f, indent=4)
+        
+        # Restoration logic
+        if all(result["status"] == "clean" for result in metadata["av_results"].values()):
+            # Remove dummy placeholder
+            if os.path.exists(dummy_path):
+                if os.path.isdir(dummy_path):
+                    shutil.rmtree(dummy_path)
+                else:
+                    os.remove(dummy_path)
+            
+            # Restore file to original location
+            shutil.move(destination, original_paths[unique_name])
+            
+            # Remove path tracking
+            del original_paths[unique_name]
+            save_original_paths(original_paths)
+            
+            print(f"File restored to original location: {original_paths[unique_name]}")
+            return True
+        else:
+            print(f"Infected file quarantined: {destination}")
+            return False
+    
+    except Exception as e:
+        print(f"Error processing file {file_path}: {e}")
+        # Fallback: return file to original location in case of error
+        if os.path.exists(destination):
+            try:
+                shutil.move(destination, original_paths.get(unique_name, file_path))
+            except Exception as fallback_error:
+                print(f"Fallback restoration failed: {fallback_error}")
+        return False
+    """Process individual files (whether inside a directory or standalone)"""
+    original_paths = load_original_paths()
+    
+    # Generate unique name to prevent conflicts
+    unique_name = f"{datetime.now().timestamp()}_{os.path.basename(file_path)}"
+    destination = os.path.join(STORAGE_FOLDER, unique_name)
+    
+    try:
+        # Create dummy placeholder
+        dummy_path = create_dummy_placeholder(file_path)
+        
+        # Move file to storage
+        shutil.move(file_path, destination)
+        
+        # Store original path
+        original_paths[unique_name] = os.path.abspath(file_path)
+        save_original_paths(original_paths)
+        
+        # Perform scanning
+        clamdscan_result = scan_with_clamdscan(destination)
+        
+        # Create metadata
+        metadata = {
+            "id": str(uuid.uuid4()),
+            "timestamp": datetime.now().isoformat(),
+            "type": "file",
+            "host_path": os.path.abspath(destination),
+            "original_path": original_paths[unique_name],
+            "file_hash": generate_file_hash(destination),
+            "status": "scanned",
+            "av_results": {
+                "clamdscan": {
+                    "status": clamdscan_result["status"],
+                    "details": clamdscan_result["details"]
+                }
+            }
+        }
+        
+        # Write metadata
+        metadata_file = f"{destination}.metadata.json"
+        with open(metadata_file, 'w') as f:
+            json.dump(metadata, f, indent=4)
+        
+        # Restoration logic
+        if clamdscan_result["status"] == "clean":
+            # Remove dummy placeholder
+            if os.path.exists(dummy_path):
+                if os.path.isdir(dummy_path):
+                    shutil.rmtree(dummy_path)
+                else:
+                    os.remove(dummy_path)
+            
+            # Restore file to original location
+            shutil.move(destination, original_paths[unique_name])
+            
+            # Remove path tracking
+            del original_paths[unique_name]
+            save_original_paths(original_paths)
+            
+            print(f"File restored to original location: {original_paths[unique_name]}")
+            return True
+        else:
+            print(f"Infected file quarantined: {destination}")
+            return False
+    
+    except Exception as e:
+        print(f"Error processing file {file_path}: {e}")
+        # Fallback: return file to original location in case of error
+        if os.path.exists(destination):
+            try:
+                shutil.move(destination, original_paths.get(unique_name, file_path))
+            except Exception as fallback_error:
+                print(f"Fallback restoration failed: {fallback_error}")
+        return False
 
 def watch_directory():
+    """
+    Watch directory for new files and folders.
+    """
     print(f"Watching directory: {WATCH_FOLDER}")
-    processed_files = set()
+    processed_items = set()
 
     while True:
-        for file_name in os.listdir(WATCH_FOLDER):
-            file_path = os.path.join(WATCH_FOLDER, file_name)
-            if os.path.isdir(file_path) or file_name in processed_files:
-                continue
-
-            print(f"New file detected: {file_path}")
-            # Move the file to storage and start scanning
-            process_file(file_path)
-            processed_files.add(file_name)
-
-        time.sleep(5)  # Added back the sleep to prevent high CPU usage
+        try:
+            for item_name in os.listdir(WATCH_FOLDER):
+                item_path = os.path.join(WATCH_FOLDER, item_name)
+                
+                # Skip already processed items
+                if item_name in processed_items:
+                    continue
+                
+                # Process file or folder
+                print(f"Processing item: {item_path}")
+                process_item(item_path)
+                processed_items.add(item_name)
+            
+            # Efficient sleep to prevent high CPU usage
+            time.sleep(5)
+        
+        except Exception as e:
+            print(f"Error in watch_directory: {e}")
+            time.sleep(10)  # Longer sleep on persistent errors
 
 if __name__ == '__main__':
     watch_directory()
